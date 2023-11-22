@@ -407,7 +407,7 @@ def terminal(cmd, terminal, debug=0):
              terminal.see(tk.END)
              if not err: break
 
-def createfolders(Name,mcvers):
+def createfolders(Name.lower(),mcvers):
     user_folder = os.path.join(mcpath, "users", Name)
 
     # test if folder exists
@@ -624,7 +624,7 @@ def cl_confirmed(Name,Passwort,Email,code,code2):
           print(e)
         connection.commit()                                 
     
-        createfolders(Name.lower(),mcvers) 
+        createfolders(Name,mcvers) 
         cl_login(1, Name, Passwort, mcvers)
     else:
         messagebox.showerror("Error", "Der Code war falsch!")
