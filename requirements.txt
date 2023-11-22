@@ -1,4 +1,6 @@
 mysql-connector-python
 Pillow
 requests
-
+portablemc
+hashlib
+tkinter
