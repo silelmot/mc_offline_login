@@ -30,32 +30,59 @@ args = parser.parse_args()
 
 debug = 1 if args.debug else 0
 
-version='2.0.2'
+version='2.0.6a'
 print("Version:",version)
 dir = os.path.dirname(os.path.realpath(__file__))
 
 config = configparser.ConfigParser()
 config.read(dir + '/database.ini')
 
+"""
+Settings:
+	(not in database.ini anymore because of passwords and credentials)
 
-TOKEN=config['telegram']['token']
-chat_id=['telegram']['id']
+tried to have settings in database.ini - but everybody can read credentials , python can be compiled. save against noobs, 
+have to find other solution, maybe first start setup-page with encrypted data and admin-password 
 
-email_port = config['email']['port']
-email_server = config['email']['server']
-email_sender = config['email']['sender']
-email_password = config['email']['pw']
+"""
 
+#TelegramToken
+TOKEN="bottoken"
+chat_id="chatid"
+
+#Email-Server-Settings
+email_enabled = True
+email_port = 465  
+email_server = "example.example.net"
+email_sender = "info@example.net"
+email_password = "password"
+
+
+#RemoteSaveServer
+rss_enabled = True
+rss_host = "minecraftdata@192.168.2.1"
+rss_port = 22
+rss_keyfile = "/home/minecraft/.ssh/mcdata"
+
+#mysqlDB / if enabled
+mysql_enabled = True
+mysql_host = "192.168.2.1"
+mysql_db = "minecraft"
+mysql_user = "minecraft"
+mysql_pass = "password"
 
 mdir = config['Mountdir']['dir']
 mcpath = Path("%s/mc_data" % mdir)
 
-if not mcpath.is_mount():
-    bashCommand = "sshfs -o allow_other,IdentityFile=~/.ssh/mcdata,port=2221 minecraftdata@%s:data %s/mc_data/" % (config['mysqlDB']['host'],mdir)
-    subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
-    print("mounted")
+if rss_enabled:
+    if not mcpath.is_mount():
+        bashCommand = "sshfs -o allow_other,IdentityFile=%s,port=%s %s:data %s/mc_data/" % (rss_keyfile,rss_port,rss_host,mdir)
+        subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
+        print("mounted")
+    else:
+        print("already mounted")
 else:
-    print("already mounted")
+    print("rss not enabled") 
     
 resettry = 0;
 
@@ -68,10 +95,10 @@ regex = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
 versions = config['Versions']['version'].split('\n')
 
 
-connection = mysql.connector.connect(host = config['mysqlDB']['host'],
-                       database =config['mysqlDB']['db'],
-                       user =config['mysqlDB']['user'],
-                       password = config['mysqlDB']['pass'])
+connection = mysql.connector.connect(host = mysql_host,
+                       database = mysql_db,
+                       user = mysql_user,
+                       password = mysql_pass)
 
 
 window = Tk()
@@ -202,18 +229,57 @@ def get_servers(mcversion):
 
 
 def get_userdata(Name,game):
-    if os.path.islink("%s/%s/saves" % (os.path.expanduser("~/.minecraft/mods"),game.lower())):
-        bashCommand = "rm %s/%s/saves" % (os.path.expanduser("~/.minecraft/mods"),game.lower())
+    max_attempts = 5
+    failed_attempts = 0
+    success = False
+
+#if remot system is installed and enabled:
+    if rss_enabled:    
+       if os.path.islink("%s/%s/saves" % (os.path.expanduser("~/.minecraft/mods"),game.lower())):
+           bashCommand = "rm %s/%s/saves" % (os.path.expanduser("~/.minecraft/mods"),game.lower())
+       elif not os.path.exists("%s/%s/saves" % (os.path.expanduser("~/.minecraft/mods"),game.lower())):
+           create_mcfolders(Name.lower(),game.lower())
+           bashCommand = "echo "
+       else:
+           for save in os.listdir("%s/%s/saves/" % (os.path.expanduser("~/.minecraft/mods"),game.lower())):
+              world_path = os.path.join(("%s/%s/saves/" % (os.path.expanduser("~/.minecraft/mods"),game.lower())),save)
+              remote_world = os.path.join(("%s/users/%s/saves" % (mcpath,Name.lower())),save)
+    	  	  
+              if os.path.exists(remote_world):
+                 current_date = time.strftime('%Y%m%d')
+                 new_save_name = f"{save}_{current_date}"
+                 remote_world = os.path.join(("%s/users/%s/saves" % (mcpath,Name.lower())), new_save_name)
+                 print(f"Renaming world '{save}' to '{new_save_name}' on remote server.")
+              shutil.move(world_path, remote_world)
+              print(f"Moved world '{save}' to remote saves for user '{Name}'.")
+	           
+	
+           bashCommand = "rm -r %s/%s/saves/" % (os.path.expanduser("~/.minecraft/mods"),game.lower())
+       p = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
+       out,err = p.communicate()	
+       while failed_attempts < max_attempts and not success:
+           bashCommand = "ln -sf %s/users/%s/saves %s/%s/" % (mcpath,Name.lower(),os.path.expanduser("~/.minecraft/mods/"),game.lower())
+           try:
+               subprocess.run(bashCommand.split(), check=True)
+               success = True
+           except subprocess.CalledProcessError:
+               failed_attempts += 1
+	
+   # if symlink is successfull:
+       if success:
+           print("Symlink erfolgreich erstellt.")
+       else:
+           print(f"Symlink konnte nach {max_attempts} Versuchen nicht erstellt werden.")
+           # message via telegram
+           message = f"Symlink-Erstellung fehlgeschlagen nach {max_attempts} Versuchen."
+           telegram = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&text={message}"
+           requests.post(telegram).json()
+	    
+       bashCommand = "ln -sf %s/users/%s/options.txt %s/%s/" % (mcpath,Name.lower(),os.path.expanduser("~/.minecraft/mods/"),game.lower())
+       p = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
+       out,err = p.communicate()	   
     else:
-        bashCommand = "rm -r %s/%s/saves/" % (os.path.expanduser("~/.minecraft/mods"),game.lower())
-    p = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
-    out,err = p.communicate()	
-    bashCommand = "ln -sf %s/users/%s/saves %s/%s/" % (mcpath,Name.lower(),os.path.expanduser("~/.minecraft/mods/"),game.lower())
-    p = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
-    out,err = p.communicate()	
-    bashCommand = "ln -sf %s/users/%s/options.txt %s/%s/" % (mcpath,Name.lower(),os.path.expanduser("~/.minecraft/mods/"),game.lower())
-    p = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
-    out,err = p.communicate()	    
+       print("rss not enabled") 
 	
 def get_vers():
     bashCommand = "portablemc search"
@@ -325,15 +391,18 @@ def cl_login(arg, txt1, txt2, mcvers):
             if not record_name:
                 messagebox.showerror("Error", "Nutzername nicht gefunden!")
                 return
-            else:
+            elif email_enabled:
                 MsgBox = messagebox.askquestion("Error", "Passwort falsch! Willst du es zurücksetzen?")
                 if MsgBox == 'yes':
                     sendemail(Name)
                 return
+            else:
+                MsgBox = messagebox.showerror("Error", "Das Passwort ist falsch!")
+                return
     else:
         Name = txt1     
   
-    createfolders(Name.lower(),mcvers)
+    create_remotefolders(Name.lower(),mcvers)
     vnum = (vlist[1].index(mcvers))
     rungame = vlist[2][vnum]
     typeogame =  (vlist[0][vnum])
@@ -342,7 +411,7 @@ def cl_login(arg, txt1, txt2, mcvers):
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, shell=True)
     output, errors = p.communicate()
     mcversion = extract_version(output)
-    #print("this is game:%s -  type:%s" % (gamename,gamename))
+
     game = "%s_%s" % (typeogame,mcversion)#game.replace(":", "_")
     print("game is: %s" % game)
     print("version: %s"% mcversion) 
@@ -385,7 +454,7 @@ def check_if_ready(thread):
         sys.exit(0)
 
 def terminal(cmd, terminal, debug=0):
-#    print(cmd)
+
     if debug:
          p = subprocess.Popen(cmd, shell=True)
          p.communicate()
@@ -407,7 +476,14 @@ def terminal(cmd, terminal, debug=0):
              terminal.see(tk.END)
              if not err: break
 
-def createfolders(Name,mcvers):
+def create_mcfolders(Name,mcvers):
+    vers_folder = os.path.join(os.path.expanduser("~/.minecraft/mods"),mcvers)
+    print(f"vers_folder: '{vers_folder}'")
+    
+    if not os.path.exists(vers_folder):
+        os.makedirs(vers_folder)
+
+def create_remotefolders(Name,mcvers):
     user_folder = os.path.join(mcpath, "users", Name)
 
     # test if folder exists
@@ -480,6 +556,7 @@ def resetcodeconfirm(Name,email_code):
         window.bind('<Return>',lambda event: cl_pwreset(txt1,email_code,Name))
     else:
         messagebox.showerror("Error", "Code 3x falsch eingegeben!")
+        resettry = 0;
         cl_loginpage()
 
 def cl_pwreset(txt1,email_code,Name): 
@@ -624,7 +701,7 @@ def cl_confirmed(Name,Passwort,Email,code,code2):
           print(e)
         connection.commit()                                 
     
-        createfolders(Name.lower(),mcvers) 
+        create_remotefolders(Name.lower(),mcvers) 
         cl_login(1, Name, Passwort, mcvers)
     else:
         messagebox.showerror("Error", "Der Code war falsch!")

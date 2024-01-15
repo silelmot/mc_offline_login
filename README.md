@@ -2,6 +2,11 @@
 
 This repository contains a login script that provides the possibility to offer Minecraft in offline mode in an environment with multiple PCs. However, the usernames, with which inventory, buildings, etc., are assigned in the offline mode, are secured by a username/password entry in a database.
 
+## Version:
+### 2.0.6a: 
+- added option to have mysql, email and remote-save optionally
+- put credentials back into python-code for now. will chane later with better system.
+
 ## Features:
 
 - Secure login with username and password to protect user data in offline Minecraft environments.
@@ -130,6 +135,5 @@ The script streamlines the creation of this folder structure, so you don't need 
 ## ToDo:
 These are reminders for me for future improvements to the code:
 
-    Make Telegram integration optional.
     Editable Screen-Messages
-    Allow the script to run without a remote save server.
+    Admin-Panel for Settings
